@@ -52,9 +52,6 @@ def setup_distributed(port=29500):
     dist.init_process_group(backend="nccl", init_method="env://")
     return dist.get_rank(), dist.get_world_size()
 
-
-
-
 def accuracy_sum(logits, labels):
     if list(logits.shape) == list(labels.shape) + [2]:
         # 2-d outputs
@@ -204,14 +201,31 @@ def brief_validate(model, device, validation_loader, epoch, rank, val_name='', a
         print('FN: ', combined_metrics['valFN'])
         print('TN: ', combined_metrics['valTN'])
         print('FP: ', combined_metrics['valFP'])
+
+    TP = combined_metrics['valTP']
+    FN = combined_metrics['valFN']
+    TN = combined_metrics['valTN']
+    FP = combined_metrics['valFP']
+
+    accuracy = 0
+    f1 = 0
+    precision_0 = 0
+    recall_0 = 0
+    f1_0=0
+
     try:
         accuracy = (combined_metrics['valTP']+combined_metrics['valTN'])/(combined_metrics['valTP']+combined_metrics['valTN']+combined_metrics['valFN']+combined_metrics['valFP'])
         precision = combined_metrics['valTP']/(combined_metrics['valTP']+combined_metrics['valFP'])
         recall = combined_metrics['valTP']/(combined_metrics['valTP']+combined_metrics['valFN'])
+        precision_0 = TN / (TN + FN)
+        recall_0 = TN / (TN + FP)
+        f1_0 = 2 * precision_0 * recall_0 / (precision_0 + recall_0)
         f1 = 2*precision*recall/(precision+recall)
+        macro_f1 = (f1 + f1_0) / 2
     except Exception as e:
         print(f'ERROR: {e}')
-        accuracy=precision=recall=f1=0
+        accuracy=precision=recall=f1=precision_0=recall_0=f1_0=macro_f1=0
+
     if rank == 0:
         print(f'Val {val_name} Epoch {epoch}== Accuracy: {accuracy:.4f}; Precision: {precision:.4f}; Recall: {recall:.4f}; F1Score: {f1:.4f}.' )
     if args.quick_val: # self added quick_val
@@ -219,7 +233,16 @@ def brief_validate(model, device, validation_loader, epoch, rank, val_name='', a
         args.TPFNTNFP[1] += combined_metrics['valFN']
         args.TPFNTNFP[2] += combined_metrics['valTN']
         args.TPFNTNFP[3] += combined_metrics['valFP']
-    return f1
+    return {
+        'f1_score_1': f1,
+        'accuracy': accuracy,
+        'precision_1': precision,
+        'recall_1': recall,
+        'precision_0': precision_0,
+        'recall_0': recall_0,
+        'f1_score_0': f1,
+        'macro_f1': macro_f1
+    }
     
 
 
@@ -239,6 +262,7 @@ def run(max_epochs=None,
         weight_decay=0, 
         **kwargs):
     args = locals()
+    # 当前进程编号，总进程数
     rank, world_size = setup_distributed()
     set_seed(kwargs['args'].seed+rank) # set seed
     if device is None:
@@ -255,30 +279,30 @@ def run(max_epochs=None,
     model_path = os.path.join(kwargs['local_model'], model_name) if kwargs['local_model'] is not None else model_name # self added: direct to pretrained model_dir
     
     tokenization_utils.logger.setLevel('ERROR')
-    if model_name in ['distilbert-base-cased', 'distilbert-base-uncased']:
-        tokenizer = DistilBertTokenizer.from_pretrained(model_path)
-        model = DistilBertForSequenceClassification.from_pretrained(model_path).to(device)
-    elif model_name in ['chinese-roberta-wwm-ext', 'bert-base-cased', 'bert-base-uncased']: # load chinese roberta with BERT
-        tokenizer = BertTokenizer.from_pretrained(model_path)
-        # model_config = BertConfig.from_pretrained(model_name)
-        model = BertForSequenceClassification.from_pretrained(model_path).to(device)
-    elif model_name in ['roberta-base', 'roberta-large']:
+    # if model_name in ['distilbert-base-cased', 'distilbert-base-uncased']:
+    #     tokenizer = DistilBertTokenizer.from_pretrained(model_path)
+    #     model = DistilBertForSequenceClassification.from_pretrained(model_path).to(device)
+    # elif model_name in ['chinese-roberta-wwm-ext', 'bert-base-cased', 'bert-base-uncased']: # load chinese roberta with BERT
+    #     tokenizer = BertTokenizer.from_pretrained(model_path)
+    #     # model_config = BertConfig.from_pretrained(model_name)
+    #     model = BertForSequenceClassification.from_pretrained(model_path).to(device)
+    if model_name in ['roberta-base', 'roberta-large']:
         tokenizer = RobertaTokenizer.from_pretrained(model_path)
         model = RobertaForSequenceClassification.from_pretrained(model_path).to(device)
-    elif model_name in ['xlnet-base-cased']:
-        tokenizer = XLNetTokenizer.from_pretrained(model_path)
-        model = XLNetForSequenceClassification.from_pretrained(model_path).to(device)
+    # elif model_name in ['xlnet-base-cased']:
+    #     tokenizer = XLNetTokenizer.from_pretrained(model_path)
+    #     model = XLNetForSequenceClassification.from_pretrained(model_path).to(device)
     # elif model_name in ['multi-qa-MiniLM-L6-cos-v1']:
-    else:
-        print(f'Loading {model_name} via auto-loader...')
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
-        if model_name in ['gpt2']:
-            tokenizer.padding_side = "left"
-            tokenizer.pad_token = tokenizer.eos_token
-            # model.resize_token_embeddings(len(tokenizer))
-            model.config.pad_token_id = model.config.eos_token_id
-        model = model.to(device)
+    # else:
+    #     print(f'Loading {model_name} via auto-loader...')
+    #     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    #     model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    #     if model_name in ['gpt2']:
+    #         tokenizer.padding_side = "left"
+    #         tokenizer.pad_token = tokenizer.eos_token
+    #         # model.resize_token_embeddings(len(tokenizer))
+    #         model.config.pad_token_id = model.config.eos_token_id
+    #     model = model.to(device)
         
     if rank == 0:
         summary(model)
@@ -287,6 +311,7 @@ def run(max_epochs=None,
 
     if world_size > 1:
         model = DistributedDataParallel(model, [rank], output_device=rank, find_unused_parameters=True)
+    
     validation_loader1, validation_loader2, validation_loader3, validation_loader4, validation_loader5, validation_loader6 = None, None, None, None, None, None
 
     train_loader, validation_loader, validation_loader1, validation_loader2, validation_loader3, validation_loader4, validation_loader5, validation_loader6 = chatgpt_load_datasets(kwargs['train_data_file'], kwargs['val_data_file'], tokenizer, batch_size,
@@ -336,6 +361,12 @@ def run(max_epochs=None,
             precision = combined_metrics['valTP']/(combined_metrics['valTP']+combined_metrics['valFP'])
             recall = combined_metrics['valTP']/(combined_metrics['valTP']+combined_metrics['valFN'])
             f1 = 2*precision*recall/(precision+recall)
+
+            precision_0 = combined_metrics['valTN']/ (combined_metrics['valTN']+combined_metrics['valFN'])
+            recall_0 = combined_metrics['valTN'] / (combined_metrics['valTN']+combined_metrics['valFP'])
+            f1_0 = 2 * precision_0 * recall_0 / (precision_0 + recall_0)
+            f1 = 2*precision*recall/(precision+recall)
+            macro_f1 = (f1 + f1_0) / 2
         except Exception as e:
             print(f'ERROR: {e}')
             accuracy=precision=recall=f1=0
@@ -345,7 +376,7 @@ def run(max_epochs=None,
 
         if rank == 0:
             print(f'Epoch {epoch}== Accuracy: {accuracy:.4f}; Precision: {precision:.4f}; Recall: {recall:.4f}; F1Score: {f1:.4f}; Best F1 {best_f1:.4f} @ep{best_f1_epoch}.' )
-
+            print(f'precision_ai: {precision_0:.4f}; recall_0: {recall_0:.4f}; f1_0: {f1_0:.4f}; macro_f1: {macro_f1:.4f}.')
             for key, value in combined_metrics.items():
                 writer.add_scalar(key, value, global_step=epoch)
 
@@ -367,7 +398,7 @@ def run(max_epochs=None,
                 model.save_pretrained(os.path.join(logdir, f"complete-{epoch}"))
             else:
                 model.module.save_pretrained(os.path.join(logdir, f"complete-{epoch}"))
-        f1_1 = brief_validate(model, device, validation_loader1, epoch, rank, val_name='1', args=kwargs['args'])
+        metrics = brief_validate(model, device, validation_loader1, epoch, rank, val_name='1', args=kwargs['args'])
         f1_mix = None
         if kwargs['args'].quick_val:
             TP, FN, TN, FP = kwargs['args'].TPFNTNFP
@@ -386,24 +417,35 @@ def run(max_epochs=None,
         f1_4 = brief_validate(model, device, validation_loader4, epoch, rank, val_name='4', args=kwargs['args'])
         f1_5 = brief_validate(model, device, validation_loader5, epoch, rank, val_name='5', args=kwargs['args'])
         f1_6 = brief_validate(model, device, validation_loader6, epoch, rank, val_name='6', args=kwargs['args'])
-        if rank == 0:
-            print(f'$$$$ Summarized results @ Ep {epoch}:')
-            for f1score_print in [f1, f1_1, f1_2, f1_3, f1_4, f1_5, f1_6, f1_mix]:
-                if f1score_print is not None:
-                    print(f'{f1score_print:.4f} |', end='')
-            print()
-            print('-'*50)
+        # if rank == 0:
+        #     print(f'$$$$ Summarized results @ Ep {epoch}:')
+        #     for f1score_print in [f1, metrics['f1_score_1'], f1_2, f1_3, f1_4, f1_5, f1_6, f1_mix]:
+        #         if f1score_print is not None:
+        #             print(f'{f1score_print:.4f} |', end='')
+        #     print()
+        #     print('-'*50)
 
 
 
 if __name__ == '__main__':
+    # CUDA_VISIBLE_DEVICES=0 python train.py --batch-size 32 
+    # --max-sequence-length 512 
+    # --train-data-file unfilter_full/en_train.csv 
+    # --val-data-file unfilter_full/en_test.csv 
+    # --model-name roberta-base --local-data data --lamb 0.4 --prior 0.2 
+    # --pu_type dual_softmax_dyn_dtrun --len_thres 55 --aug_min_length 1 
+    # --max-epochs 1 --weight-decay 0 --mode original_single 
+    # --aug_mode sentence_deletion-0.25 --clean 1 
+    # --val_file1 unfilter_sent/en_test.csv 
+    # --quick_val 1 --learning-rate 5e-05 --seed 0
+
     from option import get_parser
     args, unparsed = get_parser()
     args.sentence_lengths = list()
     trained_on_what = ''
     trained_on_what_ls = args.train_data_file.split('/') # record dataset to train on
     for i in range(len(trained_on_what_ls)): # find a valid dataset name
-        if '.' not in trained_on_what_ls[i]:
+        if '.' not in trained_on_what_ls[i]: # full or sent
             trained_on_what = trained_on_what_ls[i]
             break
 
@@ -438,6 +480,7 @@ if __name__ == '__main__':
 
     print(f'ARGS: {args}')
 
+    # args打包成字典，传给run
     run(**dict(**vars(args), args=args))
 
     # save sentence lengths
