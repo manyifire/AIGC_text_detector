@@ -39,9 +39,12 @@ class EncodedDataset(Dataset):
     def __getitem__(self, index):
         '''Modified: tokenizer api'''
         if self.epoch_size is not None:
+            print(self.epoch_size)
             label = self.random.randint(2)
             texts = [self.fake_texts, self.real_texts][label]
+            print(f'label---------: {label}, texts-----------: {texts}')
             text = texts[self.random.randint(len(texts))]
+            print(f'text: {text}')
         else:
             if index < len(self.real_texts):
                 text = self.real_texts[index]
@@ -50,9 +53,10 @@ class EncodedDataset(Dataset):
                 text = self.fake_texts[index - len(self.real_texts)]
                 label = 0
 
-        if self.train_flag and self.args.aug_min_length > 0: # activate multiscale augmentation
-            text = multi_scale_augment(text, self.args.aug_min_length, self.args.aug_mode)
-
+        # if self.train_flag and self.args.aug_min_length > 0: # activate multiscale augmentation
+        #     text = multi_scale_augment(text, self.args.aug_min_length, self.args.aug_mode)
+        if(type(text)!= str):
+            text = str(text)  # ensure text is a string
         output = self.tokenizer(text, padding='max_length', max_length=self.max_sequence_length, truncation=True, return_tensors='pt')
 
         return output['input_ids'].squeeze(0), output['attention_mask'].squeeze(0), label
@@ -84,7 +88,7 @@ def load_texts_original(data_file):
     data = pd.read_csv(data_file)
     for idx in tqdm(range(len(data)), desc=f'Loading {data_file}'):
         line = data.iloc[idx]
-        if line['label'] == 0:
+        if line['label'] == 0: # 0是human,1是ai
             human_texts.append(line['answer'])
             human_qs.append(line['question'])
         else:
@@ -95,22 +99,22 @@ def load_texts_original(data_file):
     return chatgpt_texts, human_texts, chatgpt_qs, human_qs
 
 
-def load_texts_tweep(data_file):
-    chatgpt_texts = []
-    human_texts = []
+# def load_texts_tweep(data_file):
+#     chatgpt_texts = []
+#     human_texts = []
 
 
-    D = pd.read_csv(data_file, sep=";")
+#     D = pd.read_csv(data_file, sep=";")
 
-    for idx in tqdm(range(len(D)), desc=f'Loading {data_file}'):
-        if D.iloc[idx]['account.type'] == 'human':
-            human_texts.append(D.iloc[idx]['text'])
-        elif D.iloc[idx]['account.type'] == 'bot':
-            chatgpt_texts.append(D.iloc[idx]['text'])
-        else:
-            print(D.iloc[idx]['account.type'])
+#     for idx in tqdm(range(len(D)), desc=f'Loading {data_file}'):
+#         if D.iloc[idx]['account.type'] == 'human':
+#             human_texts.append(D.iloc[idx]['text'])
+#         elif D.iloc[idx]['account.type'] == 'bot':
+#             chatgpt_texts.append(D.iloc[idx]['text'])
+#         else:
+#             print(D.iloc[idx]['account.type'])
 
-    return chatgpt_texts, human_texts
+#     return chatgpt_texts, human_texts
 
 
 def chatgpt_load_datasets(train_data_file, val_data_file, tokenizer, batch_size,
@@ -119,40 +123,40 @@ def chatgpt_load_datasets(train_data_file, val_data_file, tokenizer, batch_size,
 
     Sampler = DistributedSampler if distributed() and dist.get_world_size() > 1 else RandomSampler
 
-    cleaning = en_cleaning
+    # cleaning = en_cleaning
+    # cleaner = do_nothing if args.clean==0 else partial(clean_group, func=cleaning)
 
-    cleaner = do_nothing if args.clean==0 else partial(clean_group, func=cleaning)
+    # if mode in ['tweep']:
+        # if mode == 'tweep':
+        #     data_reader = load_texts_tweep
 
-    if mode in ['tweep']:
-        if mode == 'tweep':
-            data_reader = load_texts_tweep
+        # real_train, fake_train = cleaner(*data_reader(train_data_file))
+        # real_valid, fake_valid = cleaner(*data_reader(val_data_file))
+        # if val_file1 is not None:
+        #     real_valid1, fake_valid1 = cleaner(*data_reader(val_file1))
+        # if val_file2 is not None:
+        #     real_valid2, fake_valid2 = cleaner(*data_reader(val_file2))
+        # if val_file3 is not None:
+        #     real_valid3, fake_valid3 = cleaner(*data_reader(val_file3))
+        # if val_file4 is not None:
+        #     real_valid4, fake_valid4 = cleaner(*data_reader(val_file4))
+        # if val_file5 is not None:
+        #     real_valid5, fake_valid5 = cleaner(*data_reader(val_file5))
+        # if val_file6 is not None:
+        #     real_valid6, fake_valid6 = cleaner(*data_reader(val_file6))
 
-        real_train, fake_train = cleaner(*data_reader(train_data_file))
-        real_valid, fake_valid = cleaner(*data_reader(val_data_file))
-        if val_file1 is not None:
-            real_valid1, fake_valid1 = cleaner(*data_reader(val_file1))
-        if val_file2 is not None:
-            real_valid2, fake_valid2 = cleaner(*data_reader(val_file2))
-        if val_file3 is not None:
-            real_valid3, fake_valid3 = cleaner(*data_reader(val_file3))
-        if val_file4 is not None:
-            real_valid4, fake_valid4 = cleaner(*data_reader(val_file4))
-        if val_file5 is not None:
-            real_valid5, fake_valid5 = cleaner(*data_reader(val_file5))
-        if val_file6 is not None:
-            real_valid6, fake_valid6 = cleaner(*data_reader(val_file6))
-
-    elif mode in ['original_single']: # csv type
+    if mode in ['original_single']: # csv type
         if mode == 'original_single':
             data_reader = load_texts_original
-        real_train, fake_train,_,_ = cleaner(*data_reader(train_data_file))
-        real_valid, fake_valid,_,_ = cleaner(*data_reader(val_data_file))
+        # chatgpt_answer, human_answer
+        real_train, fake_train,_,_ = data_reader(train_data_file)
+        real_valid, fake_valid,_,_ = data_reader(val_data_file)
         if val_file1 is not None:
-            real_valid1, fake_valid1,_,_ = cleaner(*data_reader(val_file1))
+            real_valid1, fake_valid1,_,_ = data_reader(val_file1)
         if val_file2 is not None:
-            real_valid2, fake_valid2,_,_ = cleaner(*data_reader(val_file2))
+            real_valid2, fake_valid2,_,_ = data_reader(val_file2)
         if val_file3 is not None:
-            real_valid3, fake_valid3,_,_ = cleaner(*data_reader(val_file3))
+            real_valid3, fake_valid3,_,_ = data_reader(val_file3)
         if val_file4 is not None:
             real_valid4, fake_valid4,_,_ = cleaner(*data_reader(val_file4))
         if val_file5 is not None:
