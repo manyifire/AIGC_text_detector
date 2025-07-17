@@ -42,7 +42,7 @@ def get_parser():
     parser.add_argument('--local', action='store_true')
     parser.add_argument('--log-dir', type=str, default=None, help='store trained models')
     # extra val_file
-    parser.add_argument('--val_file1', type=str, default='unfilter_sent/en_test.csv', help='val_file_1')
+    parser.add_argument('--val_file1', type=str, default=None, help='val_file_1')
     parser.add_argument('--val_file2', type=str, default=None, help='val_file_2')
     parser.add_argument('--val_file3', type=str, default=None, help='val_file_3')
     parser.add_argument('--val_file4', type=str, default=None, help='val_file_4')
@@ -51,7 +51,7 @@ def get_parser():
     
     # self added: multiscale data aug in training
     parser.add_argument('--aug_min_length', type=int, default=1, help='activate augmentation')
-    parser.add_argument('--aug_mode', type=parser_auto_detect, default='sentence_deletion-0.25', help='multiscale augmentation mode')
+    parser.add_argument('--aug_mode', type=parser_auto_detect, default=None, help='multiscale augmentation mode')
 
     # pu related
     parser.add_argument('--lamb', type=float, default=0.4)
