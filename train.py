@@ -233,6 +233,8 @@ def brief_validate(model, device, validation_loader, epoch, rank, val_name='', a
         args.TPFNTNFP[1] += combined_metrics['valFN']
         args.TPFNTNFP[2] += combined_metrics['valTN']
         args.TPFNTNFP[3] += combined_metrics['valFP']
+
+    print(f'Validation {val_name} results: Acc {accuracy:.4f}; F1 {f1:.4f}; Precision_0 {precision_0:.4f}; Recall_0 {recall_0:.4f}; F1_0 {f1_0:.4f}; Macro_F1 {macro_f1:.4f}.')
     return {
         'f1_score_1': f1,
         'accuracy': accuracy,
